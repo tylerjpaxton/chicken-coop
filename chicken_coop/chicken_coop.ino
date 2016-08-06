@@ -1,20 +1,31 @@
 #include <Time.h>
 #include <TimeLord.h>
+#include <Stepper.h>
+
+//Setup stepper moter
+const int steps_per_revolution = 200;  // steps per revolution
+int stepper_speed = 60; //stepper speed
+Stepper door_stepper(steps_per_revolution, 8, 9, 10, 11); // initialize the stepper library on pins 8 through 11:
 
 //Set TimeLord parameters
 float const latitude = 42.784167; // latitude (south values negative)
 float const longtitude = -83.245556; //longitude (west values negative)
 int timezone = -5;
 
+//set open and shut time paramaters
+int open_buffer = -60; //time relative to sunrise for doors to open
+int close_buffer = 60; //time relative to sunrset for doors to close
+int door_change_requests_required = 10; //how many consecutive loops before door open/close command is sent
+int door_change_requests = 0; //how many consecutive door open/close decision have been made
+
+//Set door control parameters
+boolean door_open = true; //current door status
+int door_open_revolutions = 0;
+int door_close_revolutions = 0;
 
 //Set general parameters
-int open_buffer = -60; //time relative to sunrise for doors to open
-int close_buffer = 60; //time relative to sunrset for doors to clsoe
-int door_checks_required = 10; //how many consecutive loops before door open/close command is sent
-int door_checks_passed = 0; //how many consecutive door open/close decision have been made
-boolean door_open = false; //current door status
 boolean debug_on = true; //debug mode for printing to serial port
-long delay_time = 5000; //millisecond delay between loops
+long delay_time = 60000; //millisecond delay between loops
 
 //Set pins
 
@@ -26,10 +37,13 @@ void setup(void) {
   // We'll send debugging information via the Serial monitor
   Serial.begin(9600);    
 
-
   //set current time
-  setTime(11,26,00,5,8,2016);
+  setTime(22,16,00,5,8,2016);
 
+  //stepper speed set
+  door_stepper.setSpeed(stepper_speed);
+
+  //Print current status
   Serial.print("Current time: ");
   Serial.print(hour());
   Serial.print(":");
@@ -70,43 +84,52 @@ void loop(void) {
 
   
   //check current minutes against open close door times to decide if door needs to be toggled
-  if(day_minute > close_time ) {
+  if(day_minute > close_time && door_open) {
 
     //increment door checks
-    door_checks_passed++;
+    door_change_requests++;
 
     //debug logging
     if(debug_on){
       Serial.print("Door checks: ");
-      Serial.print(door_checks_passed);
+      Serial.print(door_change_requests);
       Serial.print("/");
-      Serial.println(door_checks_required);
+      Serial.println(door_change_requests_required);
     }
 
     //send door command if decision has been consistent
-    if(door_checks_passed >= door_checks_required) {
-      set_door_status(false);
-      door_checks_passed = 0;
+    if(door_change_requests >= door_change_requests_required) {
+      if (door_open) set_door_status(false);
+      door_change_requests = 0;
     }
   }
    
-  else if(day_minute > open_time) {
+  else if(day_minute > open_time && !door_open) {
 
     //increment successful door check
-    door_checks_passed++;
+    door_change_requests++;
 
     //debug logging
     if(debug_on){
       Serial.print("Door checks: ");
-      Serial.print(door_checks_passed);
+      Serial.print(door_change_requests);
       Serial.print("/");
-      Serial.println(door_checks_required);
+      Serial.println(door_change_requests_required);
     }
 
     //send door command if decision has been consistent
-    if(door_checks_passed >= door_checks_required) {
-      set_door_status(true);
-      door_checks_passed = 0;
+    if(door_change_requests >= door_change_requests_required) {
+      if (!door_open) set_door_status(true);
+      door_change_requests = 0;
+    }
+  }
+  else {
+    //debug logging
+    if(debug_on){
+      Serial.print("Door change requests: ");
+      Serial.print(door_change_requests);
+      Serial.print("/");
+      Serial.println(door_change_requests_required);
     }
   }
 
@@ -129,10 +152,10 @@ int get_sun_minute(String sun_type){
   //set up timeloard for today
   byte today_sun[]  = {0, 0, 0, day(), month(), year()};
 
-  if(sun_type = "Sunrise"){
+  if(sun_type == "Sunrise"){
     t.SunRise(today_sun);
   }
-  else if(sun_type = "Sunrise"){
+  else if(sun_type == "Sunset"){
     t.SunSet(today_sun);
   }
   else{
@@ -142,7 +165,7 @@ int get_sun_minute(String sun_type){
   
     //output sunrise  info
   if(debug_on){
-    Serial.print("sun_type");
+    Serial.print(sun_type);
     Serial.print(": ");
     Serial.print(today_sun[2]);
     Serial.print(":");
@@ -167,13 +190,19 @@ void set_door_status(boolean requested_door_status) {
       //open or shut the door
       if(!door_open) {
         //turn motor to open
-        if(debug_on){Serial.println("Openeing door....");}
+        if(debug_on){Serial.println("Opening door....");}
+        for (int i=0; i <= door_open_revolutions; i++){
+          // door_stepper.step(stepsPerRevolution);
+        }   
         delay(10000); //simulate time for door opening
         door_open = true;
       }
       else if(door_open) {
         //turn motor to close
         if(debug_on){Serial.println("Closing door....");}
+        for (int i=0; i <= door_close_revolutions; i++){
+          // door_stepper.step(-stepsPerRevolution);
+        }  
         delay(10000); //simulate time for door closing
         door_open = false;
       }
